@@ -4,6 +4,7 @@ import scipy
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+from sklearn import preprocessing
 
 import statsmodels.api as sm
 from statsmodels.sandbox.regression.predstd import wls_prediction_std
@@ -74,7 +75,18 @@ class linear_agent:
         self.total_pos_yu = None
         self.total_pos_xd = None
 
+        self.year_mean_df = None
+        self.year_std_df = None
+
     def train(self, train_data):
+
+        normalised_train_data = train_data.copy()
+
+        self.year_mean_df = train_data.groupby("year").mean()[["avg_mv", "total_mv"]]
+        self.year_std_df = train_data.groupby("year").std()[["avg_mv", "total_mv"]]
+
+        normalised_train_data = normalised_train_data.apply(self._scale, axis=1)
+
         self.avg_pts_linear_model = smf.ols(formula="pts ~ avg_mv", data=train_data).fit()
         self.model_list.append(self.avg_pts_linear_model)
         self.total_pts_linear_model = smf.ols(formula="pts ~ total_mv", data=train_data).fit()
@@ -92,6 +104,14 @@ class linear_agent:
                                                                            train_data.pos.values, self.confidence)
         self.total_pos_yl, self.total_pos_yu, self.total_pos_xd = linregress_CIs(train_data.total_mv.values,
                                                                                  train_data.pos.values, self.confidence)
+
+    # Normalise the inputs according to different year
+    def _scale(self, x):
+        x["avg_mv"] = (x["avg_mv"] - self.year_mean_df.loc[x["year"],
+                                                           "avg_mv"]) / self.year_std_df.loc[x["year"], "avg_mv"]
+        x["total_mv"] = (x["total_mv"] - self.year_mean_df.loc[x["year"],
+                                                               "total_mv"]) / self.year_std_df.loc[x["year"], "total_mv"]
+        return x
 
     def evaluate(self, train_data, test_data, col_names):
         avg_x = pd.DataFrame({"avg_mv": np.linspace(train_data.avg_mv.min(),
@@ -349,7 +369,7 @@ if __name__ == "__main__":
     testing_set_df = pd.read_pickle("./obj/test_data.pkl")
     numeric_big_summary_df = pd.read_pickle("./obj/numeric_big_summary_df.pkl")
     prediction_input_df = pd.read_pickle("obj/prediction_input_df.pkl")
-    my_poly_2_agent = non_linear_agent()
+    my_poly_2_agent = linear_agent()
     my_poly_2_agent.train(train_data=training_set_df)
     # my_poly_2_agent.evaluate(train_data=training_set_df, test_data=testing_set_df,
     #                          col_names=numeric_big_summary_df.columns)
