@@ -1,16 +1,16 @@
-import patsy
+from __future__ import division
 import statsmodels.formula.api as smf
 import scipy
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-from sklearn import preprocessing
-
-import statsmodels.api as sm
-from statsmodels.sandbox.regression.predstd import wls_prediction_std
+from sklearn import neighbors
 
 
 class Column:
+    def __init__(self):
+        pass
+
     AVG_MV = 0
     AVG_AGE = 1
     FULL = 2
@@ -79,13 +79,7 @@ class linear_agent:
         self.year_std_df = None
 
     def train(self, train_data):
-
-        normalised_train_data = train_data.copy()
-
-        self.year_mean_df = train_data.groupby("year").mean()[["avg_mv", "total_mv"]]
-        self.year_std_df = train_data.groupby("year").std()[["avg_mv", "total_mv"]]
-
-        normalised_train_data = normalised_train_data.apply(self._scale, axis=1)
+        train_data = self._scale(train_data)
 
         self.avg_pts_linear_model = smf.ols(formula="pts ~ avg_mv", data=train_data).fit()
         self.model_list.append(self.avg_pts_linear_model)
@@ -105,15 +99,25 @@ class linear_agent:
         self.total_pos_yl, self.total_pos_yu, self.total_pos_xd = linregress_CIs(train_data.total_mv.values,
                                                                                  train_data.pos.values, self.confidence)
 
+    def _scale(self, train_data):
+        self.year_mean_df = train_data.groupby("year").mean()[["avg_mv", "total_mv"]]
+        self.year_std_df = train_data.groupby("year").std()[["avg_mv", "total_mv"]]
+
+        return train_data.apply(self._normalise, axis=1)
+
     # Normalise the inputs according to different year
-    def _scale(self, x):
+    def _normalise(self, x):
         x["avg_mv"] = (x["avg_mv"] - self.year_mean_df.loc[x["year"],
                                                            "avg_mv"]) / self.year_std_df.loc[x["year"], "avg_mv"]
         x["total_mv"] = (x["total_mv"] - self.year_mean_df.loc[x["year"],
-                                                               "total_mv"]) / self.year_std_df.loc[x["year"], "total_mv"]
+                                                               "total_mv"]) / self.year_std_df.loc[
+                            x["year"], "total_mv"]
         return x
 
     def evaluate(self, train_data, test_data, col_names):
+        train_data = self._scale(train_data)
+        test_data = self._scale(test_data)
+
         avg_x = pd.DataFrame({"avg_mv": np.linspace(train_data.avg_mv.min(),
                                                     train_data.avg_mv.max(),
                                                     len(train_data.avg_mv))})
@@ -174,6 +178,7 @@ class linear_agent:
         plt.show()
 
     def predict(self, x):
+        x = self._scale(x)
         columns = ["Avg. Market Values: Points", "Total Market Values: Points",
                    "Avg. Market Values: Position", "Total Market Values: Position"]
         index = x["full"].values
@@ -190,9 +195,7 @@ class linear_agent:
 
 class poly_2_agent:
 
-    def __init__(self, confidence=0.95, prediction_band=0.95):
-        self.confidence = confidence
-        self.prediction_band = prediction_band
+    def __init__(self):
         # === models
         self.model_list = []
         self.avg_pts_poly_2_model = None
@@ -200,7 +203,24 @@ class poly_2_agent:
         self.avg_pos_poly_2_model = None
         self.total_pos_poly_2_model = None
 
+    def _scale(self, train_data):
+        self.year_mean_df = train_data.groupby("year").mean()[["avg_mv", "total_mv"]]
+        self.year_std_df = train_data.groupby("year").std()[["avg_mv", "total_mv"]]
+
+        return train_data.apply(self._normalise, axis=1)
+
+    # Normalise the inputs according to different year
+    def _normalise(self, x):
+        x["avg_mv"] = (x["avg_mv"] - self.year_mean_df.loc[x["year"],
+                                                           "avg_mv"]) / self.year_std_df.loc[x["year"], "avg_mv"]
+        x["total_mv"] = (x["total_mv"] - self.year_mean_df.loc[x["year"],
+                                                               "total_mv"]) / self.year_std_df.loc[
+                            x["year"], "total_mv"]
+        return x
+
     def train(self, train_data):
+        train_data = self._scale(train_data)
+
         self.avg_pts_poly_2_model = smf.ols(formula="pts ~ avg_mv + I(avg_mv ** 2.0)", data=train_data).fit()
         self.model_list.append(self.avg_pts_poly_2_model)
         self.total_pts_poly_2_model = smf.ols(formula="pts ~ total_mv + I(total_mv ** 2.0)", data=train_data).fit()
@@ -211,6 +231,9 @@ class poly_2_agent:
         self.model_list.append(self.total_pos_poly_2_model)
 
     def evaluate(self, train_data, test_data, col_names):
+        train_data = self._scale(train_data)
+        test_data = self._scale(test_data)
+
         avg_x = pd.DataFrame({"avg_mv": np.linspace(train_data.avg_mv.min(),
                                                     train_data.avg_mv.max(),
                                                     len(train_data.avg_mv))})
@@ -263,6 +286,8 @@ class poly_2_agent:
         plt.show()
 
     def predict(self, x):
+        x = self._scale(x)
+
         columns = ["Avg. Market Values: Points", "Total Market Values: Points",
                    "Avg. Market Values: Position", "Total Market Values: Position"]
         index = x["full"].values
@@ -279,9 +304,7 @@ class poly_2_agent:
 
 class non_linear_agent:
 
-    def __init__(self, confidence=0.95, prediction_band=0.95):
-        self.confidence = confidence
-        self.prediction_band = prediction_band
+    def __init__(self):
         # === models
         self.model_list = []
         self.poly2_model = None
@@ -289,7 +312,24 @@ class non_linear_agent:
         self.poly2_poly3_model = None
         self.poly4_model = None
 
+    def _scale(self, train_data):
+        self.year_mean_df = train_data.groupby("year").mean()[["avg_mv", "total_mv"]]
+        self.year_std_df = train_data.groupby("year").std()[["avg_mv", "total_mv"]]
+
+        return train_data.apply(self._normalise, axis=1)
+
+    # Normalise the inputs according to different year
+    def _normalise(self, x):
+        x["avg_mv"] = (x["avg_mv"] - self.year_mean_df.loc[x["year"],
+                                                           "avg_mv"]) / self.year_std_df.loc[x["year"], "avg_mv"]
+        x["total_mv"] = (x["total_mv"] - self.year_mean_df.loc[x["year"],
+                                                               "total_mv"]) / self.year_std_df.loc[
+                            x["year"], "total_mv"]
+        return x
+
     def train(self, train_data):
+        train_data = self._scale(train_data)
+
         self.poly2_model = smf.ols(formula="pts ~ avg_mv + I(avg_mv ** 2.0)", data=train_data).fit()
         self.model_list.append(self.poly2_model)
         self.poly3_model = smf.ols(formula="pts ~ avg_mv + I(avg_mv ** 3.0)", data=train_data).fit()
@@ -301,6 +341,8 @@ class non_linear_agent:
         self.model_list.append(self.poly4_model)
 
     def evaluate(self, train_data, test_data, col_names):
+        train_data = self._scale(train_data)
+        test_data = self._scale(test_data)
         avg_x = pd.DataFrame({"avg_mv": np.linspace(train_data.avg_mv.min(),
                                                     train_data.avg_mv.max(),
                                                     len(train_data.avg_mv))})
@@ -350,6 +392,7 @@ class non_linear_agent:
         plt.show()
 
     def predict(self, x):
+        x = self._scale(x)
         columns = ["Polynomial Degree 2", "Polynomial Degree 3",
                    "Polynomial Degree 2+3", "Polynomial Degree 4"]
         index = x["full"].values
@@ -364,13 +407,202 @@ class non_linear_agent:
         return prediction_df
 
 
+class knn_agent:
+
+    def __init__(self):
+        self.total_uniform_neighbours = None
+        self.avg_uniform_neighbours = None
+        self.total_distance_neighbours = None
+        self.avg_distance_neighbours = None
+        # === models
+        self.total_uniform_knn = None
+        self.avg_uniform_knn = None
+        self.total_distance_knn = None
+        self.avg_distance_knn = None
+
+    def _scale(self, train_data):
+        self.year_mean_df = train_data.groupby("year").mean()[["avg_mv", "total_mv"]]
+        self.year_std_df = train_data.groupby("year").std()[["avg_mv", "total_mv"]]
+
+        return train_data.apply(self._normalise, axis=1)
+
+    # Normalise the inputs according to different year
+    def _normalise(self, x):
+        x["avg_mv"] = (x["avg_mv"] - self.year_mean_df.loc[x["year"],
+                                                           "avg_mv"]) / self.year_std_df.loc[x["year"], "avg_mv"]
+        x["total_mv"] = (x["total_mv"] - self.year_mean_df.loc[x["year"],
+                                                               "total_mv"]) / self.year_std_df.loc[
+                            x["year"], "total_mv"]
+        return x
+
+    def validate(self, train_data, test_data, max_k_num):
+        train_data = self._scale(train_data)
+        test_data = self._scale(test_data).dropna()
+        total_uniform_loss_list = []
+        avg_uniform_loss_list = []
+        total_distance_loss_list = []
+        avg_distance_loss_list = []
+
+        for i in range(1, max_k_num):
+            uniform_knn = neighbors.KNeighborsRegressor(n_neighbors=i, weights="uniform")
+            distance_knn = neighbors.KNeighborsRegressor(n_neighbors=i, weights="distance")
+
+            total_uniform_prediction = uniform_knn.fit(train_data.total_mv[:, np.newaxis],
+                                                       train_data.pts[:, np.newaxis]).predict(
+                test_data.total_mv[:, np.newaxis])
+            avg_uniform_prediction = uniform_knn.fit(train_data.avg_mv[:, np.newaxis],
+                                                     train_data.pts[:, np.newaxis]).predict(
+                test_data.avg_mv[:, np.newaxis])
+
+            total_distance_prediction = distance_knn.fit(train_data.total_mv[:, np.newaxis],
+                                                         train_data.pts[:, np.newaxis]).predict(
+                test_data.total_mv[:, np.newaxis])
+            avg_distance_prediction = distance_knn.fit(train_data.avg_mv[:, np.newaxis],
+                                                       train_data.pts[:, np.newaxis]).predict(
+                test_data.avg_mv[:, np.newaxis])
+
+            total_uniform_loss_list.append(np.mean(np.square(test_data.pts - np.squeeze(total_uniform_prediction))))
+            avg_uniform_loss_list.append(np.mean(np.square(test_data.pts - np.squeeze(avg_uniform_prediction))))
+            total_distance_loss_list.append(np.mean(np.square(test_data.pts - np.squeeze(total_distance_prediction))))
+            avg_distance_loss_list.append(np.mean(np.square(test_data.pts - np.squeeze(avg_distance_prediction))))
+
+        uniform_loss_df = pd.DataFrame(data={"Avg. Market Values(uniform)": avg_uniform_loss_list,
+                                             "Total Market Values(uniform)": total_uniform_loss_list,
+                                             "Avg. Market Values(distance)": avg_distance_loss_list,
+                                             "Total Market Values(distance)": total_distance_loss_list},
+                                       index=range(1, max_k_num))
+
+        # Observe from the plot we can tell that the global minimum is the uniform neighbours with total market values
+        self.total_uniform_neighbours = uniform_loss_df.sort_values("Total Market Values(uniform)").head(
+            1).index.values.item(0)
+        self.avg_uniform_neighbours = uniform_loss_df.sort_values("Avg. Market Values(uniform)").head(
+            1).index.values.item(0)
+        self.total_distance_neighbours = uniform_loss_df.sort_values("Total Market Values(distance)").head(
+            1).index.values.item(0)
+        self.avg_distance_neighbours = uniform_loss_df.sort_values("Avg. Market Values(distance)").head(
+            1).index.values.item(0)
+
+        ax = uniform_loss_df.plot(color=["r", "g", "c", "b"])
+        ax.axvline(x=self.total_uniform_neighbours, color="b", linestyle="--", alpha=0.8)
+        ax.axvline(x=self.total_distance_neighbours, color="c", linestyle="--", alpha=0.8)
+        ax.axvline(x=self.avg_uniform_neighbours,  color="g", linestyle="--", alpha=0.8)
+        ax.axvline(x=self.avg_distance_neighbours, color="r", linestyle="--", alpha=0.8)
+        # plt.text(0, 5, "Test")
+        plt.ylabel("loss")
+        plt.xlabel("k number")
+        plt.title("Cross Validate K Value For KNN")
+        plt.show()
+
+    def train(self, train_data):
+        train_data = self._scale(train_data)
+
+        if self.total_uniform_neighbours is not None:
+            self.total_uniform_knn = neighbors.KNeighborsRegressor(n_neighbors=self.total_uniform_neighbours,
+                                                                   weights="uniform")
+            self.avg_uniform_knn = neighbors.KNeighborsRegressor(n_neighbors=self.avg_uniform_neighbours,
+                                                                 weights="uniform")
+
+            self.total_distance_knn = neighbors.KNeighborsRegressor(n_neighbors=self.total_distance_neighbours,
+                                                                    weights="distance")
+            self.avg_distance_knn = neighbors.KNeighborsRegressor(n_neighbors=self.avg_distance_neighbours,
+                                                                  weights="distance")
+        else:
+            self.total_uniform_knn = neighbors.KNeighborsRegressor(n_neighbors=50, weights="uniform")
+            self.avg_uniform_knn = neighbors.KNeighborsRegressor(n_neighbors=50, weights="uniform")
+
+            self.total_distance_knn = neighbors.KNeighborsRegressor(n_neighbors=50, weights="distance")
+            self.avg_distance_knn = neighbors.KNeighborsRegressor(n_neighbors=50, weights="distance")
+
+        self.total_uniform_knn.fit(train_data.total_mv[:, np.newaxis], train_data.pts[:, np.newaxis])
+        self.avg_uniform_knn.fit(train_data.avg_mv[:, np.newaxis], train_data.pts[:, np.newaxis])
+
+        self.total_distance_knn.fit(train_data.total_mv[:, np.newaxis], train_data.pts[:, np.newaxis])
+        self.avg_distance_knn.fit(train_data.avg_mv[:, np.newaxis], train_data.pts[:, np.newaxis])
+
+    def evaluate(self, train_data, test_data, col_names):
+        train_data = self._scale(train_data)
+        test_data = self._scale(test_data).dropna()
+
+        avg_x = np.linspace(train_data.avg_mv.min(), train_data.avg_mv.max(), len(train_data.avg_mv))
+        total_x = np.linspace(train_data.total_mv.min(),
+                              train_data.total_mv.max(),
+                              len(train_data.total_mv))
+
+        avg_uniform_prediction = self.avg_uniform_knn.predict(test_data.avg_mv[:, np.newaxis])
+        total_uniform_prediction = self.total_uniform_knn.predict(test_data.total_mv[:, np.newaxis])
+        avg_distance_prediction = self.avg_distance_knn.predict(test_data.avg_mv[:, np.newaxis])
+        total_distance_prediction = self.total_distance_knn.predict(test_data.total_mv[:, np.newaxis])
+
+        avg_normal_loss = np.mean(np.square(test_data.pts - np.squeeze(avg_uniform_prediction)))
+        total_normal = np.mean(np.square(test_data.pts - np.squeeze(total_uniform_prediction)))
+        avg_distance_loss = np.mean(np.square(test_data.pts - np.squeeze(avg_distance_prediction)))
+        total_distance_loss = np.mean(np.square(test_data.pts - np.squeeze(total_distance_prediction)))
+
+        fig, axes = plt.subplots(nrows=2, ncols=2)
+        axes[0, 0].scatter(train_data.avg_mv, train_data.pts, label="Points", s=10, alpha=0.6)
+        axes[0, 0].plot(avg_x, self.avg_uniform_knn.predict(avg_x[:, np.newaxis]), "r-",
+                        label='Uniform k = {}'.format(self.avg_uniform_neighbours), alpha=0.9)
+        axes[0, 0].legend(loc='upper left', framealpha=0.5, prop={'size': 'small'})
+        axes[0, 0].set_ylabel(col_names[Column.PTS])
+        axes[0, 0].set_title("Test Set Loss:{:.2f}".format(avg_normal_loss))
+
+        axes[0, 1].scatter(train_data.total_mv, train_data.pts, label="Points", s=10, alpha=0.6)
+        axes[0, 1].plot(total_x, self.total_uniform_knn.predict(total_x[:, np.newaxis]), "r-",
+                        label='Uniform k = {}'.format(self.total_uniform_neighbours), alpha=0.9)
+        axes[0, 1].legend(loc='upper left', framealpha=0.5, prop={'size': 'small'})
+        axes[0, 1].set_title("Test Set Loss:{:.2f}".format(total_normal))
+
+        axes[1, 0].scatter(train_data.avg_mv, train_data.pts, label="Points", s=10, alpha=0.6)
+        axes[1, 0].plot(avg_x, self.avg_distance_knn.predict(avg_x[:, np.newaxis]), "r-",
+                        label='Distance k = {}'.format(self.avg_distance_neighbours), alpha=0.9)
+        axes[1, 0].legend(loc='upper right', framealpha=0.5, prop={'size': 'small'})
+        axes[1, 0].set_xlabel(col_names[Column.AVG_MV])
+        axes[1, 0].set_ylabel(col_names[Column.PTS])
+        axes[1, 0].set_title("Test Set Loss:{:.2f}".format(avg_distance_loss))
+
+        axes[1, 1].scatter(train_data.total_mv, train_data.pts, label="Points", s=10, alpha=0.6)
+        axes[1, 1].plot(total_x, self.total_distance_knn.predict(total_x[:, np.newaxis]), "r-",
+                        label='Distance k = {}'.format(self.total_distance_neighbours), alpha=0.9)
+        axes[1, 1].legend(loc='upper right', framealpha=0.5, prop={'size': 'small'})
+        axes[1, 1].set_xlabel(col_names[Column.TOTAL_MV])
+        axes[1, 1].set_title("Test Set Loss:{:.2f}".format(total_distance_loss))
+
+        plt.setp([a.get_xticklabels() for a in axes[0, :]], visible=False)
+        plt.setp([a.get_yticklabels() for a in axes[:, 1]], visible=False)
+        fig.tight_layout()
+        plt.show()
+
+    def predict(self, x):
+        x = self._scale(x)
+
+        index = x["full"].values
+        titles = ["K Nearest Neighbour(Uniform Weights)", "K Nearest Neighbour(Distance Weights)"]
+        prediction_dict = {}
+
+        total_uniform_prediction = self.total_uniform_knn.predict(x.total_mv[:, np.newaxis])
+        prediction_dict[(titles[0], "Total Market Values: Points")] = np.squeeze(total_uniform_prediction)
+
+        avg_uniform_prediction = self.avg_uniform_knn.predict(x.avg_mv[:, np.newaxis])
+        prediction_dict[(titles[0], "Avg. Market Values: Points")] = np.squeeze(avg_uniform_prediction)
+
+        total_distance_prediction = self.total_distance_knn.predict(x.total_mv[:, np.newaxis])
+        prediction_dict[(titles[1], "Total Market Values: Points")] = np.squeeze(total_distance_prediction)
+
+        avg_distance_prediction = self.avg_distance_knn.predict(x.avg_mv[:, np.newaxis])
+        prediction_dict[(titles[1], "Avg. Market Values: Points")] = np.squeeze(avg_distance_prediction)
+
+        prediction_df = pd.DataFrame(data=prediction_dict, index=index)
+
+        return prediction_df
+
+
 if __name__ == "__main__":
     training_set_df = pd.read_pickle("./obj/train_data.pkl")
     testing_set_df = pd.read_pickle("./obj/test_data.pkl")
     numeric_big_summary_df = pd.read_pickle("./obj/numeric_big_summary_df.pkl")
     prediction_input_df = pd.read_pickle("obj/prediction_input_df.pkl")
-    my_poly_2_agent = linear_agent()
+    my_poly_2_agent = knn_agent()
+    my_poly_2_agent.validate(train_data=training_set_df, test_data=testing_set_df, max_k_num=100)
     my_poly_2_agent.train(train_data=training_set_df)
-    # my_poly_2_agent.evaluate(train_data=training_set_df, test_data=testing_set_df,
-    #                          col_names=numeric_big_summary_df.columns)
     print my_poly_2_agent.predict(prediction_input_df)
+    my_poly_2_agent.evaluate(training_set_df, testing_set_df, numeric_big_summary_df.columns)
